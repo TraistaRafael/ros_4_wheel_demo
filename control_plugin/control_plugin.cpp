@@ -1,25 +1,10 @@
-/*
- * Copyright 2013 Open Source Robotics Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
-*/
 
 /*
- * Desc: Simple model controller that uses a twist message to move a robot on
- *       the xy plane.
- * Author: Piyush Khandelwal
- * Date: 29 July 2013
+ * Desc   : Simple model controller that drives robot to target location, and publish location back
+ *          Extension of gazebo_plugins/gazebo_ros_control_plugin
+ * 
+ * Author : Traista Rafael
+ * Date   : 15-mar-2024
  */
 
 #include "control_plugin.h"
@@ -47,7 +32,7 @@ namespace gazebo
     robot_namespace_ = "";
     if (!sdf->HasElement("robotNamespace"))
     {
-      ROS_INFO_NAMED("planar_move", "PlanarMovePlugin missing <robotNamespace>, "
+      ROS_INFO_NAMED("control_plugin", "PlanarMovePlugin missing <robotNamespace>, "
           "defaults to \"%s\"", robot_namespace_.c_str());
     }
     else
@@ -56,13 +41,13 @@ namespace gazebo
         sdf->GetElement("robotNamespace")->Get<std::string>();
     }
 
-    ROS_INFO_NAMED("planar_move", "PlanarMovePlugin foound <robotNamespace>, "
+    ROS_INFO_NAMED("control_plugin", "PlanarMovePlugin foound <robotNamespace>, "
           "defaults to \"%s\"", robot_namespace_.c_str());
 
     // Ensure that ROS has been initialized and subscribe to cmd_vel
     if (!ros::isInitialized())
     {
-      ROS_FATAL_STREAM_NAMED("planar_move", "PlanarMovePlugin (ns = " << robot_namespace_
+      ROS_FATAL_STREAM_NAMED("control_plugin", "PlanarMovePlugin (ns = " << robot_namespace_
         << "). A ROS node for Gazebo has not been initialized, "
         << "unable to load plugin. Load the Gazebo system plugin "
         << "'libgazebo_ros_api_plugin.so' in the gazebo_ros package)");
@@ -70,7 +55,7 @@ namespace gazebo
     }
     rosnode_.reset(new ros::NodeHandle(robot_namespace_));
 
-    ROS_DEBUG_NAMED("planar_move", "ControlPlugin (%s) has started",
+    ROS_DEBUG_NAMED("control_plugin", "ControlPlugin (%s) has started",
         robot_namespace_.c_str());
 
    // tf_prefix_ = tf::getPrefixParam(*rosnode_);
@@ -98,7 +83,7 @@ namespace gazebo
       event::Events::ConnectWorldUpdateBegin(
           boost::bind(&ControlPlugin::UpdateChild, this));
 
-    ROS_INFO_NAMED("planar_move", "LOADED");
+    ROS_INFO_NAMED("control_plugin", "LOADED");
   }
 
   // Update the controller
@@ -116,14 +101,13 @@ namespace gazebo
 
   void ControlPlugin::target_location_callback(const geographic_msgs::GeoPoint::ConstPtr& msg)
   {
-    ROS_INFO_NAMED("planar_move", "target_location_callback");
+    ROS_INFO_NAMED("control_plugin", "target_location_callback");
 
-    ROS_INFO_NAMED("planar_move", "target_location_callback %f %f", msg->latitude, msg->longitude);
+    ROS_INFO_NAMED("control_plugin", "target_location_callback %f %f", msg->latitude, msg->longitude);
 
     robot_pos_.latitude = msg->latitude;
     robot_pos_.longitude = msg->longitude;
     robot_location_pub_.publish(robot_pos_);
-
 
     // boost::mutex::scoped_lock scoped_lock(lock);
     // last_cmd_received_time_ = ros::Time::now();
