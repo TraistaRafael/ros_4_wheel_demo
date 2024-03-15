@@ -312,7 +312,7 @@
         <!-- Plugin -->
         <plugin name="skid_steer_drive_controller" filename="libgazebo_ros_skid_steer_drive.so">
             <updateRate>100.0</updateRate>
-            <robotNamespace>/</robotNamespace>
+            <robotNamespace>/atom</robotNamespace>
             <leftFrontJoint>left_wheel_hinge_front</leftFrontJoint>
             <rightFrontJoint>right_wheel_hinge_front</rightFrontJoint>
             <leftRearJoint>left_wheel_hinge_back</leftRearJoint>

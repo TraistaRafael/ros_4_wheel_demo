@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
-project(control_plugin)
-
 # Load catkin and all dependencies required for this package
 find_package(catkin REQUIRED COMPONENTS 
   roscpp
@@ -16,12 +14,6 @@ include_directories(${GAZEBO_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
 link_directories(${GAZEBO_LIBRARY_DIRS} ${catkin_LIBRARY_DIRS})
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS}")
 
-
-# catkin specific configuration
-catkin_package(CATKIN_DEPENDS message_runtime)
-
-
 # Build our plugin
-add_library(control_plugin SHARED control_plugin.cpp)
+add_library(control_plugin SHARED control_plugin.cc)
 target_link_libraries(control_plugin ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
-
