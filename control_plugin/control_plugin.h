@@ -29,6 +29,11 @@
 
 #include <geographic_msgs/GeoPoint.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <ignition/math/Vector3.hh>
+
+// Consider Gazebo Origin to be (32.072734, 34.787465) geographical position
+#define DEFAULT_LATITUDE 32.072734
+#define DEFAULT_LONGITUDE  34.787465
 
 namespace gazebo {
 
@@ -44,7 +49,20 @@ namespace gazebo {
       virtual void FiniChild();
 
     private:
-      void publishOdometry(double step_time);
+
+      // Read parameters from SDF file
+      void ParseSDFParams(sdf::ElementPtr sdf);
+
+      // Initialize odometry, location & geolocation vars
+      void InitVars();
+
+      // Update current velocity, trying to navigate to tarrget location
+      void CalculateVelociy();
+
+      sensor_msgs::NavSatFix GazeboPosToGeoLoc(geometry_msgs::Vector3 gazebo_pos);
+      geometry_msgs::Vector3 GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc);
+
+      void PublishOdometry(double step_time);
 
       physics::ModelPtr parent_;
       event::ConnectionPtr update_connection_;
@@ -55,7 +73,8 @@ namespace gazebo {
       ros::Publisher odometry_pub_;
       
       nav_msgs::Odometry odom_;
-      sensor_msgs::NavSatFix robot_pos_;
+      sensor_msgs::NavSatFix current_geo_pos_;
+      sensor_msgs::NavSatFix target_geo_pos_;
 
       boost::shared_ptr<tf::TransformBroadcaster> transform_broadcaster_;
       std::string tf_prefix_;
