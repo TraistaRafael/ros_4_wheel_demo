@@ -42,6 +42,9 @@
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
 
+#include <geographic_msgs/GeoPoint.h>
+#include <sensor_msgs/NavSatFix.h>
+
 namespace gazebo {
 
   class ControlPlugin : public ModelPlugin {
@@ -62,22 +65,23 @@ namespace gazebo {
       event::ConnectionPtr update_connection_;
 
       boost::shared_ptr<ros::NodeHandle> rosnode_;
-      ros::Publisher odometry_pub_;
-      ros::Subscriber vel_sub_;
-      boost::shared_ptr<tf::TransformBroadcaster> transform_broadcaster_;
-      nav_msgs::Odometry odom_;
-      std::string tf_prefix_;
+      ros::Subscriber target_location_sub_;
+      ros::Publisher robot_location_pub_;
+      sensor_msgs::NavSatFix robot_pos_;
 
-      boost::mutex lock;
+      //boost::shared_ptr<tf::TransformBroadcaster> transform_broadcaster_;
+      //std::string tf_prefix_;
+
+      //boost::mutex lock;
 
       std::string robot_namespace_;
       std::string command_topic_;
-      std::string odometry_topic_;
-      std::string odometry_frame_;
-      std::string robot_base_frame_;
-      double odometry_rate_;
-      double cmd_timeout_;
-      ros::Time last_cmd_received_time_;
+      //std::string odometry_topic_;
+      //std::string odometry_frame_;
+      //std::string robot_base_frame_;
+      //double odometry_rate_;
+      //double cmd_timeout_;
+      //ros::Time last_cmd_received_time_;
 
       // Custom Callback Queue
       ros::CallbackQueue queue_;
@@ -85,14 +89,14 @@ namespace gazebo {
       void QueueThread();
 
       // command velocity callback
-      void cmdVelCallback(const geometry_msgs::Twist::ConstPtr& cmd_msg);
+      void target_location_callback(const geographic_msgs::GeoPoint::ConstPtr& msg);
 
-      double x_;
-      double y_;
-      double rot_;
+      // double x_;
+      // double y_;
+      // double rot_;
       bool alive_;
-      common::Time last_odom_publish_time_;
-      ignition::math::Pose3d last_odom_pose_;
+      //common::Time last_odom_publish_time_;
+      //ignition::math::Pose3d last_odom_pose_;
 
   };
 
