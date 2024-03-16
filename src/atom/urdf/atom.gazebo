@@ -5,7 +5,7 @@
     
     <plugin name="control_plugin" filename="libcontrol_plugin.so">
       <updateRate>100.0</updateRate>
-      <robotNamespace>/atom</robotNamespace>
+      <robotNamespace>/</robotNamespace>
       <leftFrontJoint>left_wheel_hinge_front</leftFrontJoint>
       <rightFrontJoint>right_wheel_hinge_front</rightFrontJoint>
       <leftRearJoint>left_wheel_hinge_back</leftRearJoint>
@@ -29,6 +29,13 @@
       <covariance_x>0.0001</covariance_x>
       <covariance_y>0.0001</covariance_y>
       <covariance_yaw>0.01</covariance_yaw>
+
+      <targetLocationTopic>target_location</targetLocationTopic>
+      <robotLocationTopic>robot_location</robotLocationTopic>
+      <rotation_threshold>0.1</rotation_threshold>
+      <target_distance_limit>1</target_distance_limit>
+      <steering_speed>0.7</steering_speed>
+      <moving_speed>0.5</moving_speed>
 
     </plugin>
 

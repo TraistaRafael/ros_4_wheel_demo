@@ -13,6 +13,10 @@
 #include <ignition/common/Profiler.hh>
 #endif
 
+#include <gazebo/physics/physics.hh>
+#include <ignition/math/Vector3.hh>
+#include <ignition/math/Angle.hh>
+
 namespace gazebo
 {
 
@@ -30,15 +34,11 @@ namespace gazebo
   // Load the controller
   void ControlPlugin::Load(physics::ModelPtr parent, sdf::ElementPtr sdf)
   {
-    ROS_WARN_NAMED("control_plugin", "ControlPlugin::Load");
-
-    parent_ = parent;
-    this->world_ = parent_->GetWorld();
+    this->parent_ = parent;
+    this->world_ = parent->GetWorld();
 
     ParseSDFParams(sdf);
     InitVars();
-
-    ROS_WARN_NAMED("control_plugin", "ControlPlugin::Load ROS");
 
     // Ensure that ROS has been initialized and subscribe to cmd_vel
     if (!ros::isInitialized())
@@ -50,15 +50,12 @@ namespace gazebo
       return;
     }
 
-    ROS_WARN_NAMED("control_plugin", "ControlPlugin::reset");
-
     rosnode_.reset(new ros::NodeHandle(robot_namespace_));
 
-    ROS_WARN_NAMED("control_plugin", "ControlPlugin (%s) has started",
+    ROS_INFO_NAMED("control_plugin", "ControlPlugin (%s) has started",
         robot_namespace_.c_str());
 
     tf_prefix_ = tf::getPrefixParam(*rosnode_);
-    //transform_broadcaster_ = new tf::TransformBroadcaster();
     transform_broadcaster_.reset(new tf::TransformBroadcaster());
 
     ros::SubscribeOptions so =
@@ -68,7 +65,7 @@ namespace gazebo
 
     target_location_sub_    = rosnode_->subscribe(so);    
     robot_location_pub_     = rosnode_->advertise<sensor_msgs::NavSatFix>(robot_location_topic_, 1);
-    odometry_publisher_     = rosnode_->advertise<nav_msgs::Odometry>(odometry_topic_, 1);
+    odometry_pub_           = rosnode_->advertise<nav_msgs::Odometry>(odometry_topic_, 1);
 
     // start custom queue for diff drive
     callback_queue_thread_ =
@@ -78,28 +75,52 @@ namespace gazebo
     update_connection_ =
       event::Events::ConnectWorldUpdateBegin(
           boost::bind(&ControlPlugin::UpdateChild, this));
-
-    ROS_WARN_NAMED("control_plugin", "LOADED");
   }
 
-  void ControlPlugin::CalculateVelociy() {
+  void ControlPlugin::CalculateVelocity() {
+
+    double tolerance = ignition::math::Angle(5).Radian();
+
+    ignition::math::Pose3d robot_pose = this->parent_->WorldPose();
+    ignition::math::Vector3d gazebo_target = GeoLocToGazeboPos(target_geo_pos_);
+
+    double gazebo_dist = robot_pose.Pos().Distance(gazebo_target);
+    if (gazebo_dist < target_distance_limit_) {
+        //std::cout << "CALCULATE VELOCITY::REST \n";
+        x_ = 0.0;
+        rot_ = 0.0;
+        return;
+    }
     
+    std::cout << "CALCULATE VELOCITY::TARGET x: " << gazebo_target.X()<< "  y: " << gazebo_target.Y() << " dist: " << gazebo_dist << "\n";
+
+    double delta_x = gazebo_target.X() - robot_pose.Pos().X();
+    double delta_y = gazebo_target.Y() - robot_pose.Pos().Y(); 
+    double angle_to_goal = atan2(delta_y, delta_x); 
+
+    if (abs(angle_to_goal - robot_pose.Rot().Yaw()) > rotation_threshold_){
+        std::cout << "CALCULATE VELOCITY::DIFF rotate +  angle:" << angle_to_goal << " yaw: " << robot_pose.Rot().Yaw() << "\n";
+        x_ = 0.0;
+        rot_ = angle_to_goal > robot_pose.Rot().Yaw() ? steering_speed_ : -1 * steering_speed_;
+    }else {
+        x_ = moving_speed_;
+        rot_ = 0.0;
+    }
   }
 
-  sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(geometry_msgs::Vector3  gazebo_pos){
+  sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos) {
     sensor_msgs::NavSatFix out;
-    out.latitude = gazebo_pos.x + DEFAULT_LATITUDE;
-    out.longitude = gazebo_pos.x + DEFAULT_LONGITUDE;
+    out.latitude = (gazebo_pos.X() / gazebo_to_world_scale_) + DEFAULT_LATITUDE;
+    out.longitude = ((gazebo_pos.Y() * -1) / gazebo_to_world_scale_) + DEFAULT_LONGITUDE;
     out.altitude = 0;
     return out;
   }
 
-  geometry_msgs::Vector3 ControlPlugin::GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc){
-    //geometry_msgs::Vector3<double> out(geo_loc.latitude - DEFAULT_LATITUDE, geo_loc.longitude - DEFAULT_LONGITUDE, 0);
-    geometry_msgs::Vector3 out;
-    out.x = geo_loc.latitude - DEFAULT_LATITUDE;
-    out.y = geo_loc.longitude - DEFAULT_LONGITUDE;
-    out.z = 0;
+  ignition::math::Vector3d ControlPlugin::GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc) {
+    ignition::math::Vector3d out (
+        (geo_loc.latitude - DEFAULT_LATITUDE) * gazebo_to_world_scale_, 
+        ((geo_loc.longitude - DEFAULT_LONGITUDE) * gazebo_to_world_scale_) * -1, 
+        0);
     return out;
   }
 
@@ -107,7 +128,6 @@ namespace gazebo
   void ControlPlugin::UpdateChild()
   {
     #ifdef ENABLE_PROFILER
-    IGN_PROFILE("GazeboRosSkidSteerDrive::UpdateChild");
 #endif
 #if GAZEBO_MAJOR_VERSION >= 8
     common::Time current_time = this->world_->SimTime();
@@ -117,17 +137,24 @@ namespace gazebo
     double seconds_since_last_update =
       (current_time - last_update_time_).Double();
     if (seconds_since_last_update > update_period_) {
+
+    CalculateVelocity();
+
 #ifdef ENABLE_PROFILER
       IGN_PROFILE_BEGIN("publishOdometry");
 #endif
       PublishOdometry(seconds_since_last_update);
 #ifdef ENABLE_PROFILER
       IGN_PROFILE_END();
-
-      // Update robot in case new velocities have been requested
       IGN_PROFILE_BEGIN("getWheelVelocities");
 #endif
-      getWheelVelocities();
+      PublishRobotGeoLoc();
+#ifdef ENABLE_PROFILER
+      // Update robot in case new velocities have been requested
+      IGN_PROFILE_END();
+      IGN_PROFILE_BEGIN("getWheelVelocities");
+#endif
+      GetWheelVelocities();
 #ifdef ENABLE_PROFILER
       IGN_PROFILE_END();
       IGN_PROFILE_BEGIN("SetVelocity");
@@ -159,7 +186,7 @@ namespace gazebo
     callback_queue_thread_.join();
   }
 
-   void ControlPlugin::getWheelVelocities() {
+   void ControlPlugin::GetWheelVelocities() {
     boost::mutex::scoped_lock scoped_lock(lock);
 
     double vr = x_;
@@ -174,22 +201,9 @@ namespace gazebo
 
   void ControlPlugin::target_location_callback(const geographic_msgs::GeoPoint::ConstPtr& msg)
   {
-    ROS_WARN_NAMED("control_plugin", "target_location_callback");
-
-    ROS_WARN_NAMED("control_plugin", "target_location_callback %f %f", msg->latitude, msg->longitude);
-
+    ROS_INFO_NAMED("control_plugin", "target_location_callback %f %f", msg->latitude, msg->longitude);
     target_geo_pos_.latitude = msg->latitude;
     target_geo_pos_.longitude = msg->longitude;
-
-    // robot_pos_.latitude = msg->latitude;
-    // robot_pos_.longitude = msg->longitude;
-    // robot_location_pub_.publish(robot_pos_);
-
-    // boost::mutex::scoped_lock scoped_lock(lock);
-    // last_cmd_received_time_ = ros::Time::now();
-    // x_ = cmd_msg->linear.x;
-    // y_ = cmd_msg->linear.y;
-    // rot_ = cmd_msg->angular.z;
   }
 
   void ControlPlugin::QueueThread()
@@ -269,9 +283,15 @@ namespace gazebo
     odom_.header.frame_id = odom_frame;
     odom_.child_frame_id = base_footprint_frame;
 
-    odometry_publisher_.publish(odom_);
+    odometry_pub_.publish(odom_);
 
-    ROS_INFO_NAMED("control_plugin", "publish odometry %f  %f",  odom_.pose.pose.position.x, odom_.pose.pose.position.y);
+   // ROS_INFO_NAMED("control_plugin", "publish odometry %f  %f",  odom_.pose.pose.position.x, odom_.pose.pose.position.y);
+  }
+
+  void ControlPlugin::PublishRobotGeoLoc()
+  {
+    current_geo_pos_ = GazeboPosToGeoLoc(this->parent_->WorldPose().Pos());
+    robot_location_pub_.publish(current_geo_pos_);
   }
 
   void ControlPlugin::InitVars() {
@@ -293,8 +313,8 @@ namespace gazebo
     wheel_speed_[RIGHT_REAR] = 0;
 	wheel_speed_[LEFT_REAR] = 0;
 
-    x_ = 0.5;
-    rot_ = 0.8;
+    x_ = 0.0;
+    rot_ = 0.0;
     alive_ = true;
 
     joints[LEFT_FRONT] = this->parent_->GetJoint(left_front_joint_name_);

@@ -56,14 +56,15 @@ namespace gazebo {
       // Initialize odometry, location & geolocation vars
       void InitVars();
 
-      // Update current velocity, trying to navigate to tarrget location
-      void CalculateVelociy();
+      // Update current movement and steering velocity, moving to target location
+      void CalculateVelocity();
 
-      sensor_msgs::NavSatFix GazeboPosToGeoLoc(geometry_msgs::Vector3 gazebo_pos);
-      geometry_msgs::Vector3 GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc);
+      sensor_msgs::NavSatFix GazeboPosToGeoLoc(ignition::math::Vector3d gazebo_pos);
+      ignition::math::Vector3d GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc);
 
       void PublishOdometry(double step_time);
-      void getWheelVelocities();
+      void PublishRobotGeoLoc();
+      void GetWheelVelocities();
 
       physics::WorldPtr world_;
       physics::ModelPtr parent_;
@@ -74,7 +75,7 @@ namespace gazebo {
       std::string left_rear_joint_name_;
       std::string right_rear_joint_name_;
 
-       double wheel_separation_;
+      double wheel_separation_;
       double wheel_diameter_;
       double torque;
       double wheel_speed_[4];
@@ -85,13 +86,15 @@ namespace gazebo {
       boost::shared_ptr<ros::NodeHandle> rosnode_;
       ros::Subscriber target_location_sub_;
       ros::Publisher robot_location_pub_;
-      ros::Publisher odometry_publisher_;
+      ros::Publisher odometry_pub_;
       nav_msgs::Odometry odom_;
-      sensor_msgs::NavSatFix current_geo_pos_;
-      sensor_msgs::NavSatFix target_geo_pos_;
       boost::shared_ptr<tf::TransformBroadcaster> transform_broadcaster_;
       std::string tf_prefix_;
       bool broadcast_tf_;
+
+      // NAVIGATION
+      sensor_msgs::NavSatFix current_geo_pos_;
+      sensor_msgs::NavSatFix target_geo_pos_;
 
       boost::mutex lock;
 
@@ -101,6 +104,20 @@ namespace gazebo {
       std::string odometry_topic_;
       std::string odometry_frame_;
       std::string robot_base_frame_;
+
+      // When navigating to target, the robot is rotating or movingg, 
+      // based on the angle between current orientation and target
+      double rotation_threshold_ = 0.2;
+      
+      // At what distance from target, the robot should stop moving. 
+      double target_distance_limit_ = 0.5;
+
+      double steering_speed_ = 0.7;
+
+      double moving_speed_ = 0.5;
+
+      // Scale factor when converting from geo loc to gazebo loc
+      double gazebo_to_world_scale_ = 1000;
 
       // Custom Callback Queue
       ros::CallbackQueue queue_;
