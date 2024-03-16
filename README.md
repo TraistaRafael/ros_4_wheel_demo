@@ -33,7 +33,7 @@ Note: If you want to restart the simulation, or had any gazebo instance previous
 killall -9 gzserver & killall -9 gzclient & killall -9 gazebo
 ```
 
-- Run GUI map
+### 3. Run GUI map
 ```
 cd ~/Robotics_ws/src/gui
 python3 -m pip install -r requirements.txt
