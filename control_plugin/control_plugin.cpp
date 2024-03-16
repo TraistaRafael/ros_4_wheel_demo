@@ -1,7 +1,7 @@
 
 /*
  * Desc   : Simple model controller that drives robot to target location, and publish location back
- *          Extension of gazebo_plugins/gazebo_ros_control_plugin
+ *          Built on top of gazebo_ros_pkgs/gazebo_plugins/include/gazebo_plugins/gazebo_ros_skid_steer_drive.h
  * 
  * Author : Traista Rafael
  * Date   : 15-mar-2024
@@ -79,27 +79,21 @@ namespace gazebo
 
   void ControlPlugin::CalculateVelocity() {
 
-    double tolerance = ignition::math::Angle(5).Radian();
-
     ignition::math::Pose3d robot_pose = this->parent_->WorldPose();
     ignition::math::Vector3d gazebo_target = GeoLocToGazeboPos(target_geo_pos_);
 
     double gazebo_dist = robot_pose.Pos().Distance(gazebo_target);
     if (gazebo_dist < target_distance_limit_) {
-        //std::cout << "CALCULATE VELOCITY::REST \n";
         x_ = 0.0;
         rot_ = 0.0;
         return;
     }
     
-    std::cout << "CALCULATE VELOCITY::TARGET x: " << gazebo_target.X()<< "  y: " << gazebo_target.Y() << " dist: " << gazebo_dist << "\n";
-
     double delta_x = gazebo_target.X() - robot_pose.Pos().X();
     double delta_y = gazebo_target.Y() - robot_pose.Pos().Y(); 
     double angle_to_goal = atan2(delta_y, delta_x); 
 
     if (abs(angle_to_goal - robot_pose.Rot().Yaw()) > rotation_threshold_){
-        std::cout << "CALCULATE VELOCITY::DIFF rotate +  angle:" << angle_to_goal << " yaw: " << robot_pose.Rot().Yaw() << "\n";
         x_ = 0.0;
         rot_ = angle_to_goal > robot_pose.Rot().Yaw() ? steering_speed_ : -1 * steering_speed_;
     }else {

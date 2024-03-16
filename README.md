@@ -1,78 +1,72 @@
-# ROS workspace
 
-This repository includes sample codes to create your own robot using ROS.
+#### The scope of this project is to provide a Gazebo 4-wheel simulation and communication whith a ROS node.
 
-All the bots related to my talk ["Build Custom Robot in ROS"](https://www.youtube.com/watch?v=cuNEOtLbB14) in [Pycon Sweden](https://www.pycon.se/) is also added.
+## Build & Run
 
-## Contents
+### 1. Prerequisites:
+- ROS Noetic
+- Gazebo
 
-- [Prerequisites](#prerequisites)
-- [Set Up](#set-up-workspace)
-- [Atom Bot](#atom-robot)
-- [Atom SDF](#atom-robot-sdf)
-- [Beta Bot](#beta-robot)
-- [Control Bots](#control-the-bot)
-- [Autonomous Navigation](/docs/Navigation.md)
-
-## Prerequisites
-
-Replace <version> with noetic, melodic etc.
-  
-- ROS (`$ sudo apt-get install ros-<version>-desktop-full`)
-- Xacro (`$ sudo apt-get install ros-<version>-xacro`)
-- Gazebo (`$ sudo apt-get install ros-<version>-gazebo-ros`)
-
-## Set up workspace
-
-
-```bash
-git clone https://github.com/harshmittal2210/Robotics_ws/
-cd Robotics_ws
-git submodule update --init --recursive
+### 2. Simulation 
+- clone repository to `~/Robotics_ws`
+- Build control plugin
+```
+cd ~/Robotics_ws/control_plugin
+mkdir build
+cd build
+cmake ..
+make
+```
+- Build & run simulation
+```
+cd ~/Robotics_ws
 catkin_make
 source devel/setup.sh
-```
-
-`Note: Do not add Robotics_ws in your catkin_ws/src`
-
-I am just using the folder name `Robotics_ws` instead of `catkin_ws`
-
-## Atom Robot
-
-```bash
+source control_plugin/build/devel/setup.sh
 roslaunch atom world.launch
 ```
-<p align="center">
-<img src="./docs/img/atom.JPG" alt="Atom Bot" width="600"/>
-  </p>
 
-## Atom Robot (SDF)
-
-```bash
-roslaunch atom gazebo_world.launch
+Note: If you want to restart the simulation, or had any gazebo instance previously open, you may have to close all related processes by:
 ```
-<p align="center">
-<img src="./docs/img/atom1.JPG" alt="Atom Bot" width="600" />
-  </p>
-  
-## Beta Robot
-
-```bash
-roslaunch beta_description gazebo.launch
+killall -9 gzserver & killall -9 gzclient & killall -9 gazebo
 ```
-  <p align="center">
-    <img src="./docs/img/beta.JPG" alt="Atom Bot" width="400" />
-    <img src="./docs/img/beta1.JPG" alt="Atom Bot" width="400"/>
-    <img src="./docs/img/beta4.JPG" alt="Atom Bot" width="400" />
-  </p>
 
-## Control the bot
-
-Use `teleop_twist_keyboard`
-
-```bash
-rosrun teleop_twist_keyboard teleop_twist_keyboard.py cmd_vel:=/atom/cmd_vel
+- Run GUI map
 ```
+cd ~/Robotics_ws/src/gui
+python3 -m pip install -r requirements.txt
+python 3 main.py
+```
+
+### 3. Development notes 
+
+1. Trying to run `gui/main.py` failed, because of missing `geographic_msg` plugin, I fixed it with <br> `sudo apt-get install ros-noetic-geographic_msgs`
+
+2. After first run of gazebo, the urdf model failed to spawn, and the entire simulation was broken. 
+Fixed, by clearing all gazebo instances
+```killall -9 gzserver & killall -9 gzclient & killall -9 gazebo```
+
+3. In order to create the C++ control plugin for Gazebo I followed this sources & tutorials:
+- https://classic.gazebosim.org/tutorials?tut=guided_i5
+- https://github.com/pal-robotics/gazebo_ros_link_attacher/
+- https://github.com/ros-simulation/gazebo_ros_pkgs/blob/f9e1a4607842afa5888ef01de31cd64a1e3e297f/gazebo_plugins/src/gazebo_ros_skid_steer_drive.cpp#L70
+
+4. The initial attempts to compile the plugin failed, the problems were fixed after imlementing in `CMakeLists.txt` the missing gazebo & catkin dependencies. Also I had to create `control_plugin/package.xml`
+
+4. My C++ plugin was not communicating with ROS, althought `rqt_graph` showed everything correct. After investigations, I found that the subscription thread was not actually running. I was missing this part:
+```
+// start custom queue for diff drive
+callback_queue_thread_ =
+    boost::thread(boost::bind(&ControlPlugin::QueueThread, this));
+
+// listen to the update event (broadcast every simulation iteration)
+update_connection_ =
+    event::Events::ConnectWorldUpdateBegin(
+        boost::bind(&ControlPlugin::UpdateChild, this));
+```
+
+
+# Base repository notes
 
 ## Autonomous Navigation
 
