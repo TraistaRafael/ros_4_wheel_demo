@@ -63,21 +63,35 @@ namespace gazebo {
       geometry_msgs::Vector3 GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc);
 
       void PublishOdometry(double step_time);
+      void getWheelVelocities();
 
+      physics::WorldPtr world_;
       physics::ModelPtr parent_;
       event::ConnectionPtr update_connection_;
 
+      std::string left_front_joint_name_;
+      std::string right_front_joint_name_;
+      std::string left_rear_joint_name_;
+      std::string right_rear_joint_name_;
+
+       double wheel_separation_;
+      double wheel_diameter_;
+      double torque;
+      double wheel_speed_[4];
+
+      physics::JointPtr joints[4];
+      
+      // ROS
       boost::shared_ptr<ros::NodeHandle> rosnode_;
       ros::Subscriber target_location_sub_;
       ros::Publisher robot_location_pub_;
-      ros::Publisher odometry_pub_;
-      
+      ros::Publisher odometry_publisher_;
       nav_msgs::Odometry odom_;
       sensor_msgs::NavSatFix current_geo_pos_;
       sensor_msgs::NavSatFix target_geo_pos_;
-
       boost::shared_ptr<tf::TransformBroadcaster> transform_broadcaster_;
       std::string tf_prefix_;
+      bool broadcast_tf_;
 
       boost::mutex lock;
 
@@ -87,9 +101,6 @@ namespace gazebo {
       std::string odometry_topic_;
       std::string odometry_frame_;
       std::string robot_base_frame_;
-      double odometry_rate_;
-      double cmd_timeout_;
-      ros::Time last_cmd_received_time_;
 
       // Custom Callback Queue
       ros::CallbackQueue queue_;
@@ -100,12 +111,17 @@ namespace gazebo {
       void target_location_callback(const geographic_msgs::GeoPoint::ConstPtr& msg);
 
       double x_;
-      double y_;
       double rot_;
       bool alive_;
-      common::Time last_odom_publish_time_;
-      ignition::math::Pose3d last_odom_pose_;
 
+      // Update Rate
+      double update_rate_;
+      double update_period_;
+      common::Time last_update_time_;
+
+      double covariance_x_;
+      double covariance_y_;
+      double covariance_yaw_;
   };
 
 }

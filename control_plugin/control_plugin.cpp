@@ -16,6 +16,13 @@
 namespace gazebo
 {
 
+  enum {
+    RIGHT_FRONT=0,
+    LEFT_FRONT=1,
+    RIGHT_REAR=2,
+    LEFT_REAR=3,
+  };
+
   ControlPlugin::ControlPlugin() {}
 
   ControlPlugin::~ControlPlugin() {}
@@ -23,11 +30,15 @@ namespace gazebo
   // Load the controller
   void ControlPlugin::Load(physics::ModelPtr parent, sdf::ElementPtr sdf)
   {
+    ROS_WARN_NAMED("control_plugin", "ControlPlugin::Load");
 
     parent_ = parent;
+    this->world_ = parent_->GetWorld();
 
     ParseSDFParams(sdf);
     InitVars();
+
+    ROS_WARN_NAMED("control_plugin", "ControlPlugin::Load ROS");
 
     // Ensure that ROS has been initialized and subscribe to cmd_vel
     if (!ros::isInitialized())
@@ -38,12 +49,16 @@ namespace gazebo
         << "'libgazebo_ros_api_plugin.so' in the gazebo_ros package)");
       return;
     }
+
+    ROS_WARN_NAMED("control_plugin", "ControlPlugin::reset");
+
     rosnode_.reset(new ros::NodeHandle(robot_namespace_));
 
-    ROS_DEBUG_NAMED("control_plugin", "ControlPlugin (%s) has started",
+    ROS_WARN_NAMED("control_plugin", "ControlPlugin (%s) has started",
         robot_namespace_.c_str());
 
     tf_prefix_ = tf::getPrefixParam(*rosnode_);
+    //transform_broadcaster_ = new tf::TransformBroadcaster();
     transform_broadcaster_.reset(new tf::TransformBroadcaster());
 
     ros::SubscribeOptions so =
@@ -53,7 +68,7 @@ namespace gazebo
 
     target_location_sub_    = rosnode_->subscribe(so);    
     robot_location_pub_     = rosnode_->advertise<sensor_msgs::NavSatFix>(robot_location_topic_, 1);
-    odometry_pub_           = rosnode_->advertise<nav_msgs::Odometry>(odometry_topic_, 1);
+    odometry_publisher_     = rosnode_->advertise<nav_msgs::Odometry>(odometry_topic_, 1);
 
     // start custom queue for diff drive
     callback_queue_thread_ =
@@ -64,7 +79,7 @@ namespace gazebo
       event::Events::ConnectWorldUpdateBegin(
           boost::bind(&ControlPlugin::UpdateChild, this));
 
-    ROS_INFO_NAMED("control_plugin", "LOADED");
+    ROS_WARN_NAMED("control_plugin", "LOADED");
   }
 
   void ControlPlugin::CalculateVelociy() {
@@ -92,79 +107,47 @@ namespace gazebo
   void ControlPlugin::UpdateChild()
   {
     #ifdef ENABLE_PROFILER
-    IGN_PROFILE("GazeboRosPlanarMove::UpdateChild");
-    IGN_PROFILE_BEGIN("fill ROS message");
+    IGN_PROFILE("GazeboRosSkidSteerDrive::UpdateChild");
 #endif
-    boost::mutex::scoped_lock scoped_lock(lock);
-    if (cmd_timeout_>=0)
-    {
-      if ((ros::Time::now()-last_cmd_received_time_).toSec() > cmd_timeout_)
-      {
-        x_ = 0;
-        y_ = 0;
-        rot_ = 0;
-      }
+#if GAZEBO_MAJOR_VERSION >= 8
+    common::Time current_time = this->world_->SimTime();
+#else
+    common::Time current_time = this->world_->GetSimTime();
+#endif
+    double seconds_since_last_update =
+      (current_time - last_update_time_).Double();
+    if (seconds_since_last_update > update_period_) {
+#ifdef ENABLE_PROFILER
+      IGN_PROFILE_BEGIN("publishOdometry");
+#endif
+      PublishOdometry(seconds_since_last_update);
+#ifdef ENABLE_PROFILER
+      IGN_PROFILE_END();
+
+      // Update robot in case new velocities have been requested
+      IGN_PROFILE_BEGIN("getWheelVelocities");
+#endif
+      getWheelVelocities();
+#ifdef ENABLE_PROFILER
+      IGN_PROFILE_END();
+      IGN_PROFILE_BEGIN("SetVelocity");
+#endif
+#if GAZEBO_MAJOR_VERSION > 2
+      joints[LEFT_FRONT]->SetParam("vel", 0, wheel_speed_[LEFT_FRONT] / (wheel_diameter_ / 2.0));
+      joints[RIGHT_FRONT]->SetParam("vel", 0, wheel_speed_[RIGHT_FRONT] / (wheel_diameter_ / 2.0));
+      joints[LEFT_REAR]->SetParam("vel", 0, wheel_speed_[LEFT_REAR] / (wheel_diameter_ / 2.0));
+      joints[RIGHT_REAR]->SetParam("vel", 0, wheel_speed_[RIGHT_REAR] / (wheel_diameter_ / 2.0));
+#else
+      joints[LEFT_FRONT]->SetVelocity(0, wheel_speed_[LEFT_FRONT] / (wheel_diameter_ / 2.0));
+      joints[RIGHT_FRONT]->SetVelocity(0, wheel_speed_[RIGHT_FRONT] / (wheel_diameter_ / 2.0));
+      joints[LEFT_REAR]->SetVelocity(0, wheel_speed_[LEFT_REAR] / (wheel_diameter_ / 2.0));
+      joints[RIGHT_REAR]->SetVelocity(0, wheel_speed_[RIGHT_REAR] / (wheel_diameter_ / 2.0));
+#endif
+#ifdef ENABLE_PROFILER
+      IGN_PROFILE_END();
+#endif
+      last_update_time_+= common::Time(update_period_);
     }
-#if GAZEBO_MAJOR_VERSION >= 8
-    ignition::math::Pose3d pose = parent_->WorldPose();
-#else
-    ignition::math::Pose3d pose = parent_->GetWorldPose().Ign();
-#endif
-    float yaw = pose.Rot().Yaw();
-    parent_->SetLinearVel(ignition::math::Vector3d(
-          x_ * cosf(yaw) - y_ * sinf(yaw),
-          y_ * cosf(yaw) + x_ * sinf(yaw),
-          0));
-    parent_->SetAngularVel(ignition::math::Vector3d(0, 0, rot_));
-#ifdef ENABLE_PROFILER
-    IGN_PROFILE_END();
-#endif
-    if (odometry_rate_ > 0.0) {
-#if GAZEBO_MAJOR_VERSION >= 8
-      common::Time current_time = parent_->GetWorld()->SimTime();
-#else
-      common::Time current_time = parent_->GetWorld()->GetSimTime();
-#endif
-      double seconds_since_last_update =
-        (current_time - last_odom_publish_time_).Double();
-      if (seconds_since_last_update > (1.0 / odometry_rate_)) {
-#ifdef ENABLE_PROFILER
-        IGN_PROFILE_BEGIN("publishOdometry");
-#endif
-        PublishOdometry(seconds_since_last_update);
-#ifdef ENABLE_PROFILER
-        IGN_PROFILE_END();
-#endif
-        last_odom_publish_time_ = current_time;
-      }
-    }
-  }
-
-  void ControlPlugin::InitVars() {
-#if GAZEBO_MAJOR_VERSION >= 8
-    last_odom_publish_time_ = parent_->GetWorld()->SimTime();
-#else
-    last_odom_publish_time_ = parent_->GetWorld()->GetSimTime();
-#endif
-#if GAZEBO_MAJOR_VERSION >= 8
-    last_odom_pose_ = parent_->WorldPose();
-#else
-    last_odom_pose_ = parent_->GetWorldPose().Ign();
-#endif
-    x_ = 0.1;
-    y_ = 0;
-    rot_ = 0;
-    alive_ = true;
-    last_cmd_received_time_ = ros::Time::now();
-
-    // TODO macros
-    // Consider Gazebo Origin to be (32.072734, 34.787465) geographical position
-    // as defined in python GUI
-    target_geo_pos_.latitude = DEFAULT_LATITUDE;
-    target_geo_pos_.longitude = DEFAULT_LONGITUDE;
-
-    current_geo_pos_.latitude = DEFAULT_LATITUDE;
-    current_geo_pos_.longitude = DEFAULT_LONGITUDE;
   }
 
   // Finalize the controller
@@ -176,11 +159,24 @@ namespace gazebo
     callback_queue_thread_.join();
   }
 
+   void ControlPlugin::getWheelVelocities() {
+    boost::mutex::scoped_lock scoped_lock(lock);
+
+    double vr = x_;
+    double va = rot_;
+
+    wheel_speed_[RIGHT_FRONT] = vr + va * wheel_separation_ / 2.0;
+    wheel_speed_[RIGHT_REAR] = vr + va * wheel_separation_ / 2.0;
+
+    wheel_speed_[LEFT_FRONT] = vr - va * wheel_separation_ / 2.0;
+    wheel_speed_[LEFT_REAR] = vr - va * wheel_separation_ / 2.0;
+  }
+
   void ControlPlugin::target_location_callback(const geographic_msgs::GeoPoint::ConstPtr& msg)
   {
-    ROS_INFO_NAMED("control_plugin", "target_location_callback");
+    ROS_WARN_NAMED("control_plugin", "target_location_callback");
 
-    ROS_INFO_NAMED("control_plugin", "target_location_callback %f %f", msg->latitude, msg->longitude);
+    ROS_WARN_NAMED("control_plugin", "target_location_callback %f %f", msg->latitude, msg->longitude);
 
     target_geo_pos_.latitude = msg->latitude;
     target_geo_pos_.longitude = msg->longitude;
@@ -208,10 +204,12 @@ namespace gazebo
   void ControlPlugin::PublishOdometry(double step_time)
   {
     ros::Time current_time = ros::Time::now();
-    std::string odom_frame = tf::resolve(tf_prefix_, odometry_frame_);
+    std::string odom_frame =
+      tf::resolve(tf_prefix_, odometry_frame_);
     std::string base_footprint_frame =
       tf::resolve(tf_prefix_, robot_base_frame_);
 
+    // TODO create some non-perfect odometry!
     // getting data for base_footprint to odom transform
 #if GAZEBO_MAJOR_VERSION >= 8
     ignition::math::Pose3d pose = this->parent_->WorldPose();
@@ -220,12 +218,16 @@ namespace gazebo
 #endif
 
     tf::Quaternion qt(pose.Rot().X(), pose.Rot().Y(), pose.Rot().Z(), pose.Rot().W());
-    tf::Vector3    vt(pose.Pos().X(), pose.Pos().Y(), pose.Pos().Z());
+    tf::Vector3 vt(pose.Pos().X(), pose.Pos().Y(), pose.Pos().Z());
 
     tf::Transform base_footprint_to_odom(qt, vt);
-    transform_broadcaster_->sendTransform(
-        tf::StampedTransform(base_footprint_to_odom, current_time, odom_frame,
-            base_footprint_frame));
+    // if (this->broadcast_tf_) {
+
+    // 	transform_broadcaster_->sendTransform(
+    //     tf::StampedTransform(base_footprint_to_odom, current_time,
+    //         odom_frame, base_footprint_frame));
+
+    // }
 
     // publish odom topic
     odom_.pose.pose.position.x = pose.Pos().X();
@@ -235,46 +237,122 @@ namespace gazebo
     odom_.pose.pose.orientation.y = pose.Rot().Y();
     odom_.pose.pose.orientation.z = pose.Rot().Z();
     odom_.pose.pose.orientation.w = pose.Rot().W();
-    odom_.pose.covariance[0] = 0.00001;
-    odom_.pose.covariance[7] = 0.00001;
+    odom_.pose.covariance[0] = this->covariance_x_;
+    odom_.pose.covariance[7] = this->covariance_y_;
     odom_.pose.covariance[14] = 1000000000000.0;
     odom_.pose.covariance[21] = 1000000000000.0;
     odom_.pose.covariance[28] = 1000000000000.0;
-    odom_.pose.covariance[35] = 0.001;
+    odom_.pose.covariance[35] = this->covariance_yaw_;
 
     // get velocity in /odom frame
     ignition::math::Vector3d linear;
-    linear.X() = (pose.Pos().X() - last_odom_pose_.Pos().X()) / step_time;
-    linear.Y() = (pose.Pos().Y() - last_odom_pose_.Pos().Y()) / step_time;
-    if (rot_ > M_PI / step_time)
-    {
-      // we cannot calculate the angular velocity correctly
-      odom_.twist.twist.angular.z = rot_;
-    }
-    else
-    {
-      float last_yaw = last_odom_pose_.Rot().Yaw();
-      float current_yaw = pose.Rot().Yaw();
-      while (current_yaw < last_yaw - M_PI) current_yaw += 2 * M_PI;
-      while (current_yaw > last_yaw + M_PI) current_yaw -= 2 * M_PI;
-      float angular_diff = current_yaw - last_yaw;
-      odom_.twist.twist.angular.z = angular_diff / step_time;
-    }
-    last_odom_pose_ = pose;
+#if GAZEBO_MAJOR_VERSION >= 8
+    linear = this->parent_->WorldLinearVel();
+    odom_.twist.twist.angular.z = this->parent_->WorldAngularVel().Z();
+#else
+    linear = this->parent_->GetWorldLinearVel().Ign();
+    odom_.twist.twist.angular.z = this->parent_->GetWorldAngularVel().Ign().Z();
+#endif
 
     // convert velocity to child_frame_id (aka base_footprint)
     float yaw = pose.Rot().Yaw();
     odom_.twist.twist.linear.x = cosf(yaw) * linear.X() + sinf(yaw) * linear.Y();
     odom_.twist.twist.linear.y = cosf(yaw) * linear.Y() - sinf(yaw) * linear.X();
+    odom_.twist.covariance[0] = this->covariance_x_;
+    odom_.twist.covariance[7] = this->covariance_y_;
+    odom_.twist.covariance[14] = 1000000000000.0;
+    odom_.twist.covariance[21] = 1000000000000.0;
+    odom_.twist.covariance[28] = 1000000000000.0;
+    odom_.twist.covariance[35] = this->covariance_yaw_;
 
     odom_.header.stamp = current_time;
     odom_.header.frame_id = odom_frame;
     odom_.child_frame_id = base_footprint_frame;
 
-    odometry_pub_.publish(odom_);
+    odometry_publisher_.publish(odom_);
 
     ROS_INFO_NAMED("control_plugin", "publish odometry %f  %f",  odom_.pose.pose.position.x, odom_.pose.pose.position.y);
   }
+
+  void ControlPlugin::InitVars() {
+    // Initialize update rate stuff
+    if (this->update_rate_ > 0.0) {
+      this->update_period_ = 1.0 / this->update_rate_;
+    } else {
+      this->update_period_ = 0.0;
+    }
+#if GAZEBO_MAJOR_VERSION >= 8
+    last_update_time_ = this->world_->SimTime();
+#else
+    last_update_time_ = this->world_->GetSimTime();
+#endif
+
+    // Initialize velocity stuff
+    wheel_speed_[RIGHT_FRONT] = 0;
+    wheel_speed_[LEFT_FRONT] = 0;
+    wheel_speed_[RIGHT_REAR] = 0;
+	wheel_speed_[LEFT_REAR] = 0;
+
+    x_ = 0.5;
+    rot_ = 0.8;
+    alive_ = true;
+
+    joints[LEFT_FRONT] = this->parent_->GetJoint(left_front_joint_name_);
+    joints[RIGHT_FRONT] = this->parent_->GetJoint(right_front_joint_name_);
+    joints[LEFT_REAR] = this->parent_->GetJoint(left_rear_joint_name_);
+    joints[RIGHT_REAR] = this->parent_->GetJoint(right_rear_joint_name_);
+
+    if (!joints[LEFT_FRONT]) {
+      char error[200];
+      snprintf(error, 200,
+          "GazeboRosSkidSteerDrive Plugin (ns = %s) couldn't get left front hinge joint named \"%s\"",
+          this->robot_namespace_.c_str(), this->left_front_joint_name_.c_str());
+      gzthrow(error);
+    }
+
+    if (!joints[RIGHT_FRONT]) {
+      char error[200];
+      snprintf(error, 200,
+          "GazeboRosSkidSteerDrive Plugin (ns = %s) couldn't get right front hinge joint named \"%s\"",
+          this->robot_namespace_.c_str(), this->right_front_joint_name_.c_str());
+      gzthrow(error);
+    }
+
+    if (!joints[LEFT_REAR]) {
+	 char error[200];
+	 snprintf(error, 200,
+		 "GazeboRosSkidSteerDrive Plugin (ns = %s) couldn't get left rear hinge joint named \"%s\"",
+		 this->robot_namespace_.c_str(), this->left_rear_joint_name_.c_str());
+	 gzthrow(error);
+   }
+
+   if (!joints[RIGHT_REAR]) {
+	 char error[200];
+	 snprintf(error, 200,
+		 "GazeboRosSkidSteerDrive Plugin (ns = %s) couldn't get right rear hinge joint named \"%s\"",
+		 this->robot_namespace_.c_str(), this->right_rear_joint_name_.c_str());
+	 gzthrow(error);
+   }
+
+#if GAZEBO_MAJOR_VERSION > 2
+    joints[LEFT_FRONT]->SetParam("fmax", 0, torque);
+    joints[RIGHT_FRONT]->SetParam("fmax", 0, torque);
+    joints[LEFT_REAR]->SetParam("fmax", 0, torque);
+    joints[RIGHT_REAR]->SetParam("fmax", 0, torque);
+#else
+    joints[LEFT_FRONT]->SetMaxForce(0, torque);
+    joints[RIGHT_FRONT]->SetMaxForce(0, torque);
+    joints[LEFT_REAR]->SetMaxForce(0, torque);
+    joints[RIGHT_REAR]->SetMaxForce(0, torque);
+#endif
+
+    target_geo_pos_.latitude = DEFAULT_LATITUDE;
+    target_geo_pos_.longitude = DEFAULT_LONGITUDE;
+
+    current_geo_pos_.latitude = DEFAULT_LATITUDE;
+    current_geo_pos_.longitude = DEFAULT_LONGITUDE;
+  }
+
 
   void ControlPlugin::ParseSDFParams(sdf::ElementPtr sdf) {
 
@@ -288,6 +366,81 @@ namespace gazebo
     {
       robot_namespace_ =
         sdf->GetElement("robotNamespace")->Get<std::string>();
+    }
+
+    this->broadcast_tf_ = false;
+    if (!sdf->HasElement("broadcastTF")) {
+      if (!this->broadcast_tf_)
+    	  ROS_INFO_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <broadcastTF>, defaults to false.",this->robot_namespace_.c_str());
+      else ROS_INFO_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <broadcastTF>, defaults to true.",this->robot_namespace_.c_str());
+
+    } else {
+      this->broadcast_tf_ = sdf->GetElement("broadcastTF")->Get<bool>();
+    }
+
+    // TODO write error if joint doesn't exist!
+    this->left_front_joint_name_ = "left_front_joint";
+    if (!sdf->HasElement("leftFrontJoint")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <leftFrontJoint>, defaults to \"%s\"",
+          this->robot_namespace_.c_str(), this->left_front_joint_name_.c_str());
+    } else {
+      this->left_front_joint_name_ = sdf->GetElement("leftFrontJoint")->Get<std::string>();
+    }
+
+    this->right_front_joint_name_ = "right_front_joint";
+    if (!sdf->HasElement("rightFrontJoint")) {
+        ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <rightFrontJoint>, defaults to \"%s\"",
+            this->robot_namespace_.c_str(), this->right_front_joint_name_.c_str());
+    } else {
+        this->right_front_joint_name_ = sdf->GetElement("rightFrontJoint")->Get<std::string>();
+    }
+
+	this->left_rear_joint_name_ = "left_rear_joint";
+	if (!sdf->HasElement("leftRearJoint")) {
+	  ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <leftRearJoint>, defaults to \"%s\"",
+		  this->robot_namespace_.c_str(), this->left_rear_joint_name_.c_str());
+	} else {
+	  this->left_rear_joint_name_ = sdf->GetElement("leftRearJoint")->Get<std::string>();
+	}
+
+    this->right_rear_joint_name_ = "right_rear_joint";
+    if (!sdf->HasElement("rightRearJoint")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <rightRearJoint>, defaults to \"%s\"",
+          this->robot_namespace_.c_str(), this->right_rear_joint_name_.c_str());
+    } else {
+      this->right_rear_joint_name_ = sdf->GetElement("rightRearJoint")->Get<std::string>();
+    }
+
+
+    // This assumes that front and rear wheel spacing is identical
+    /*this->wheel_separation_ = this->parent->GetJoint(left_front_joint_name_)->GetAnchor(0).Distance(
+    		this->parent->GetJoint(right_front_joint_name_)->GetAnchor(0));*/
+
+    this->wheel_separation_ = 0.4;
+
+    if (!sdf->HasElement("wheelSeparation")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <wheelSeparation>, defaults to value from robot_description: %f",
+          this->robot_namespace_.c_str(), this->wheel_separation_);
+    } else {
+      this->wheel_separation_ =
+        sdf->GetElement("wheelSeparation")->Get<double>();
+    }
+
+    // TODO get this from robot_description
+    this->wheel_diameter_ = 0.15;
+    if (!sdf->HasElement("wheelDiameter")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <wheelDiameter>, defaults to %f",
+          this->robot_namespace_.c_str(), this->wheel_diameter_);
+    } else {
+      this->wheel_diameter_ = sdf->GetElement("wheelDiameter")->Get<double>();
+    }
+
+    this->torque = 5.0;
+    if (!sdf->HasElement("torque")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <torque>, defaults to %f",
+          this->robot_namespace_.c_str(), this->torque);
+    } else {
+      this->torque = sdf->GetElement("torque")->Get<double>();
     }
 
     odometry_topic_ = "odom";
@@ -326,28 +479,36 @@ namespace gazebo
       robot_base_frame_ = sdf->GetElement("robotBaseFrame")->Get<std::string>();
     }
 
-    odometry_rate_ = 20.0;
-    if (!sdf->HasElement("odometryRate"))
-    {
-      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <odometryRate>, "
-          "defaults to %f",
-          robot_namespace_.c_str(), odometry_rate_);
-    }
-    else
-    {
-      odometry_rate_ = sdf->GetElement("odometryRate")->Get<double>();
+    this->update_rate_ = 100.0;
+    if (!sdf->HasElement("updateRate")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <updateRate>, defaults to %f",
+          this->robot_namespace_.c_str(), this->update_rate_);
+    } else {
+      this->update_rate_ = sdf->GetElement("updateRate")->Get<double>();
     }
 
-    cmd_timeout_ = -1;
-    if (!sdf->HasElement("cmdTimeout"))
-    {
-      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <cmdTimeout>, "
-          "defaults to %f",
-          robot_namespace_.c_str(), cmd_timeout_);
+    this->covariance_x_ = 0.0001;
+    if (!sdf->HasElement("covariance_x")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <covariance_x>, defaults to %f",
+          this->robot_namespace_.c_str(), covariance_x_);
+    } else {
+      covariance_x_ = sdf->GetElement("covariance_x")->Get<double>();
     }
-    else
-    {
-      cmd_timeout_ = sdf->GetElement("cmdTimeout")->Get<double>();
+
+    this->covariance_y_ = 0.0001;
+    if (!sdf->HasElement("covariance_y")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <covariance_y>, defaults to %f",
+          this->robot_namespace_.c_str(), covariance_y_);
+    } else {
+      covariance_y_ = sdf->GetElement("covariance_y")->Get<double>();
+    }
+
+    this->covariance_yaw_ = 0.01;
+    if (!sdf->HasElement("covariance_yaw")) {
+      ROS_WARN_NAMED("control_plugin", "ControlPlugin (ns = %s) missing <covariance_yaw>, defaults to %f",
+          this->robot_namespace_.c_str(), covariance_yaw_);
+    } else {
+      covariance_yaw_ = sdf->GetElement("covariance_yaw")->Get<double>();
     }
 
     target_location_topic_ = "target_location";

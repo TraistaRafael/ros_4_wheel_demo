@@ -514,9 +514,9 @@
 		<material>Gazebo/Yellow</material>
 	</gazebo>
 
-	<gazebo>
+	<!-- <gazebo>
 		<plugin name="control_plugin" filename="libcontrol_plugin.so"/>
-	</gazebo>
+	</gazebo> -->
 
 	<!-- Motor, Camera and Lidar Simulation -->
 	<xacro:include filename="$(find atom)/urdf/atom.gazebo" />
