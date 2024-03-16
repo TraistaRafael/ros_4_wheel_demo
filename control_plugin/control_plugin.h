@@ -1,9 +1,8 @@
 
 /*
  * Desc   : Simple model controller that drives robot to target location, and publish location back
- *          Extension of gazebo_plugins/gazebo_ros_planar_move
+ *          Built on top of gazebo_ros_pkgs/gazebo_plugins/include/gazebo_plugins/gazebo_ros_skid_steer_drive.h
  * 
- * Author : Traista Rafael
  * Date   : 15-mar-2024
  */
 
@@ -56,7 +55,7 @@ namespace gazebo {
       // Initialize odometry, location & geolocation vars
       void InitVars();
 
-      // Update current movement and steering velocity, moving to target location
+      // Update current velocity and steering values, trying to reach target location
       void CalculateVelocity();
 
       sensor_msgs::NavSatFix GazeboPosToGeoLoc(ignition::math::Vector3d gazebo_pos);

@@ -69,11 +69,8 @@ class Backend(QObject):
         msg = GeoPoint()
         msg.latitude = lat
         msg.longitude = lon
-        # msg = Twist()
-        # msg.linear.x = 0.1
         self._pub_target.publish(msg)
         self.targetLocationChanged.emit()
-        print ("targetLocationChanged: {}".format(msg))
 
     @Property(
         QGeoCoordinate,
@@ -93,7 +90,6 @@ class Backend(QObject):
 
     # @traceme
     def cb_location(self, msg: NavSatFix):
-        print ("cb_location: {}".format(msg))
         self._robot_location = get_coord(msg.latitude, msg.longitude)
         self.locationChanged.emit()
 

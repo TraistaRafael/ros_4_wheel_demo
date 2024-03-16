@@ -3,7 +3,6 @@
  * Desc   : Simple model controller that drives robot to target location, and publish location back
  *          Built on top of gazebo_ros_pkgs/gazebo_plugins/include/gazebo_plugins/gazebo_ros_skid_steer_drive.h
  * 
- * Author : Traista Rafael
  * Date   : 15-mar-2024
  */
 
@@ -93,6 +92,8 @@ namespace gazebo
     double delta_y = gazebo_target.Y() - robot_pose.Pos().Y(); 
     double angle_to_goal = atan2(delta_y, delta_x); 
 
+    // If the vehicle is not facing the target, rotate until it does. 
+    // Oterrwise move closer to target.
     if (abs(angle_to_goal - robot_pose.Rot().Yaw()) > rotation_threshold_){
         x_ = 0.0;
         rot_ = angle_to_goal > robot_pose.Rot().Yaw() ? steering_speed_ : -1 * steering_speed_;
@@ -102,10 +103,12 @@ namespace gazebo
     }
   }
 
-  sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos) {
+  sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos) {   
+    //  
     sensor_msgs::NavSatFix out;
     out.latitude = (gazebo_pos.X() / gazebo_to_world_scale_) + DEFAULT_LATITUDE;
     out.longitude = ((gazebo_pos.Y() * -1) / gazebo_to_world_scale_) + DEFAULT_LONGITUDE;
+    // Multiply Y by -1 because Y axis is reversed in Gazebo relative to globe longitude
     out.altitude = 0;
     return out;
   }
@@ -115,6 +118,7 @@ namespace gazebo
         (geo_loc.latitude - DEFAULT_LATITUDE) * gazebo_to_world_scale_, 
         ((geo_loc.longitude - DEFAULT_LONGITUDE) * gazebo_to_world_scale_) * -1, 
         0);
+    // Multiply Y by -1 because Y axis is reversed in Gazebo relative to globe longitude
     return out;
   }
 
@@ -229,6 +233,8 @@ namespace gazebo
     tf::Vector3 vt(pose.Pos().X(), pose.Pos().Y(), pose.Pos().Z());
 
     tf::Transform base_footprint_to_odom(qt, vt);
+
+    // Not currently needed
     // if (this->broadcast_tf_) {
 
     // 	transform_broadcaster_->sendTransform(
@@ -278,8 +284,6 @@ namespace gazebo
     odom_.child_frame_id = base_footprint_frame;
 
     odometry_pub_.publish(odom_);
-
-   // ROS_INFO_NAMED("control_plugin", "publish odometry %f  %f",  odom_.pose.pose.position.x, odom_.pose.pose.position.y);
   }
 
   void ControlPlugin::PublishRobotGeoLoc()

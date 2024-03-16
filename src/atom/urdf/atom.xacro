@@ -486,9 +486,6 @@
 		<maxVel>1.0</maxVel>
 		<minDepth>0.00</minDepth>
 	</gazebo>
-	<!--<gazebo reference="right_wheel">
-		<material>Gazebo/Green</material>
-	</gazebo>-->
 
 	<gazebo reference="camera">
 		<material>Gazebo/Red</material>
@@ -513,10 +510,6 @@
 	<gazebo reference="back_right_indicator">
 		<material>Gazebo/Yellow</material>
 	</gazebo>
-
-	<!-- <gazebo>
-		<plugin name="control_plugin" filename="libcontrol_plugin.so"/>
-	</gazebo> -->
 
 	<!-- Motor, Camera and Lidar Simulation -->
 	<xacro:include filename="$(find atom)/urdf/atom.gazebo" />
