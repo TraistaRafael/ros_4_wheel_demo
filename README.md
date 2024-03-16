@@ -55,7 +55,7 @@ Fixed, by clearing all gazebo instances
 
 4. The initial attempts to compile the plugin failed, the problems were fixed after imlementing in `CMakeLists.txt` the missing gazebo & catkin dependencies. Also I had to create `control_plugin/package.xml`
 
-4. My C++ plugin was not communicating with ROS, althought `rqt_graph` showed everything correct. After investigations, I found that the subscription thread was not actually running. I was missing this part:
+5. My C++ plugin was not communicating with ROS, althought `rqt_graph` showed everything correct. After investigations, I found that the subscription thread was not actually running. I was missing this part:
 ```
 // start custom queue for diff drive
 callback_queue_thread_ =
@@ -67,9 +67,9 @@ update_connection_ =
         boost::bind(&ControlPlugin::UpdateChild, this));
 ```
 
-5. Initially, I was not able to see if the wheels are actually rotating, so I added some yellow indicators on wheels.
+6. Initially, I was not able to see if the wheels are actually rotating, so I added some yellow indicators on wheels.
 
-6. At some point, the robot was moving almost ok, but the left-right direction was reversed relative to GUI map. The solution was to update my conversion functions, to reverse langitude axis.  
+7. At some point, the robot was moving almost ok, but the left-right direction was reversed relative to GUI map. The solution was to update my conversion functions, to reverse langitude axis.  
 For more details please check the following:
 ```
 sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos)
