@@ -67,6 +67,14 @@ update_connection_ =
         boost::bind(&ControlPlugin::UpdateChild, this));
 ```
 
+5. Initially, I was not able to see if the wheels are actually rotating, so I added some yellow indicators on wheels.
+
+6. At some point, the robot was moving almost ok, but the left-right direction was reversed relative to GUI map. The solution was to update my conversion functions, to reverse langitude axis.  
+For more details please check the following:
+```
+sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos)
+ignition::math::Vector3d ControlPlugin::GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc)
+```
 
 # Base repository notes
 
