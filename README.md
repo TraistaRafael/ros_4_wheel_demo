@@ -1,6 +1,8 @@
 
 #### The scope of this project is to provide a Gazebo 4-wheel simulation and communication whith a ROS node.
 
+![Alt text](ros_demo.png)
+
 ## Build & Run
 
 ### 1. Prerequisites:
