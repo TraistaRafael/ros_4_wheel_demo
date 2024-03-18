@@ -1,6 +1,8 @@
 
 #### The scope of this project is to provide a Gazebo 4-wheel simulation and communication whith a ROS node.
 
+#### The C++ Gazebo control plugin is located in: `./control_plugin`
+
 ![Alt text](ros_demo.png)
 
 ## Build & Run
@@ -37,7 +39,7 @@ killall -9 gzserver & killall -9 gzclient & killall -9 gazebo
 ```
 cd ~/Robotics_ws/src/gui
 python3 -m pip install -r requirements.txt
-python 3 main.py
+python3 main.py
 ```
 
 ### 3. Development notes 
@@ -70,7 +72,7 @@ update_connection_ =
 6. Initially, I was not able to see if the wheels are actually rotating, so I added some yellow indicators on wheels.
 
 7. At some point, the robot was moving almost ok, but the left-right direction was reversed relative to GUI map. The solution was to update my conversion functions, to reverse langitude axis.  
-For more details please check the following:
+For more details please check the following functions:
 ```
 sensor_msgs::NavSatFix ControlPlugin::GazeboPosToGeoLoc(ignition::math::Vector3d  gazebo_pos)
 ignition::math::Vector3d ControlPlugin::GeoLocToGazeboPos(sensor_msgs::NavSatFix geo_loc)
